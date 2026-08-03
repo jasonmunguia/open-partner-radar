@@ -1,0 +1,24 @@
+# Checked before any alert fires. Matching is case-insensitive substring on the
+# company name, plus exact match on normalized domain where available.
+
+# Current partners / relationships. Classified T0_EXISTING — scored and stored,
+# never alerted as a new find.
+existing:
+  - Generalist AI
+  - Dyna Robotics
+  - Microfactory
+  - your company
+
+# Competitors we deliberately study but never approach. The Cyntronic rule:
+# emailing one of these a partnership request is an unforced credibility error
+# in a small industry.
+do_not_contact:
+  - Cyntronic
+  - Cytronic
+  - Marble Technologies
+
+# Seeded read-only from the Notion "your company Pipeline" CRM so the radar never
+# re-surfaces a company already in the pipeline. Same discipline as the July
+# lead-gen run (109 contacts + 89 companies excluded). Populate via a one-way
+# export; this file is never written back to Notion.
+crm_seen: []

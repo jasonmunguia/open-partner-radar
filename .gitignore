@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.*
+/secrets
+.DS_Store
+data/
+config/rubric.yaml
