@@ -5,6 +5,8 @@ against one criterion — **does this shorten the path to a live deployment?** �
 digest where each finding carries two links: the source it was found in, and the company's own
 site.
 
+Built by [Jason Munguia](https://github.com/jasonmunguia). Apache-2.0 — free to use, fork and build on, **with credit**. See [License and attribution](#license-and-attribution) for what that means in practice.
+
 Discovery is **news-first by design**. Accelerator directories describe a company as it was at
 *application time* and go stale; news describes what it just did. Directories are demoted to
 enrichment (batch, headcount, founders) and never used as evidence of what a company currently
