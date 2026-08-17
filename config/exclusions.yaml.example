@@ -1,0 +1,13 @@
+# EXAMPLE ONLY — replace with your own before running.
+#
+# This file is the CONTEXT half of the Bring-Your-Own-Context split: the method in
+# radar/ works for anyone, but what counts as a good partner is yours to define.
+# Copy to config/exclusions.yaml and edit.
+#
+existing:
+  - Example Existing Partner Inc
+
+do_not_contact:
+  - Example Competitor Corp
+
+crm_seen: []

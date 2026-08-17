@@ -1,0 +1,18 @@
+# EXAMPLE ONLY — replace with your own before running.
+#
+# This file is the CONTEXT half of the Bring-Your-Own-Context split: the method in
+# radar/ works for anyone, but what counts as a good partner is yours to define.
+# Copy to config/sources.yaml and edit.
+#
+tier_a:
+  - name: yc
+    enabled: false          # needs your own YC/Bookface access
+    cadence_hours: 60
+    batches: [W26, S26]
+  - name: a16z_speedrun
+    enabled: true           # public API, no auth
+    cadence_hours: 60
+
+tier_b:
+  - name: web_semantic
+    enabled: true           # needs EXA_API_KEY in your environment

@@ -28,19 +28,25 @@ SEEN = os.path.join(DERIVED, "digest_seen.json")
 HEALTH = os.path.join(ROOT, "data", "health.json")
 sys.path.insert(0, os.path.expanduser("~/.claude/tools"))
 
+# v4 taxonomy (the operator 2026-08-16). One criterion: is the company's technology INSIDE
+# Synphony's core competency (models, fine-tuning for tasks, deployment) or outside it?
+#   inside  -> ABSORB   integrate, deploy, then build the capability in-house
+#   outside -> PARTNER  buy and keep buying; arms, sensors, teleop are not our specialty
+# See scripts/migrate_tiers_v4.py for why the old T1/T2 split was incoherent.
 TIER_LABEL = {
-    "T1_PARTNER_NOW": ("Partner now", "#0b7a3b"),
-    "T2_ABSORB_TRACK": ("Absorb track", "#1558b0"),
+    "PARTNER": ("Partner — buy it, don't build it", "#0b7a3b"),
+    "ABSORB": ("Absorb — integrate, then rebuild in-house", "#1558b0"),
+    "WATCH": ("Competitor — intel only, never contact", "#a11"),
+    "INTEL": ("Industry intel", "#6b3fa0"),
+    # Stage-1 candidate tiers, still emitted by the keyword prefilter.
     "CANDIDATE_ACCELERANT": ("Deployment accelerant", "#1558b0"),
     "CANDIDATE_HARDWARE": ("Cheap/free hardware", "#8a5a00"),
     "CANDIDATE_UNKNOWN": ("Needs a look — thin public info", "#6b6b6b"),
-    "T3_CUSTOMER": ("Customer", "#6b3fa0"),
-    "T4_CHANNEL": ("Channel", "#6b3fa0"),
-    "T5_WATCH": ("Competitor — watch, do not contact", "#a11"),
 }
-# Order the email sections. Accelerants first: they move a deployment date.
-SECTIONS = ["T1_PARTNER_NOW", "CANDIDATE_ACCELERANT", "CANDIDATE_HARDWARE",
-            "T2_ABSORB_TRACK", "CANDIDATE_UNKNOWN", "T3_CUSTOMER", "T5_WATCH"]
+# Email order. Partners first (they unblock a deployment), then absorb targets, then
+# competitor intel — which the operator reads deliberately, not as leftovers.
+SECTIONS = ["PARTNER", "ABSORB", "WATCH", "INTEL",
+            "CANDIDATE_ACCELERANT", "CANDIDATE_HARDWARE", "CANDIDATE_UNKNOWN"]
 POST_QUERIES = ["robotics", "robot arm", "manipulation", "humanoid", "teleoperation",
                 "industrial automation", "manufacturing robot"]
 
@@ -89,14 +95,50 @@ def _yc(payload, timeout=120):
     return result
 
 
-def fetch_posts(limit_per_query=6):
-    """Recent Launch YC posts + Bookface founder posts on robotics topics.
+BOOKFACE_RAW = os.path.join(ROOT, "data", "raw", "bookface")
+BOOKFACE_MAX_AGE_H = 48
 
-    Errors are collected and surfaced in the digest footer (principle 4) rather than
-    disappearing into stderr.
+
+def load_bookface_posts(max_age_h=BOOKFACE_MAX_AGE_H):
+    """Read Bookface posts from raw shards written by scripts/arc_bookface.py.
+
+    Deliberately a FILE read, not a browser call. The Arc reader needs Arc running
+    with a debug port and Bookface open; the digest runs from cron at 7am when that
+    is not guaranteed. Splitting them means a closed browser degrades one lane
+    instead of killing the email — and it matches the repo's raw/derived split
+    (principle 1: store raw, read later).
+
+    Staleness is reported, never hidden. A shard nobody refreshed is a dark lane,
+    which is the exact failure the health work this week existed to surface.
     """
     posts, errors = [], []
-    for entity in ("launches", "forum"):
+    if not os.path.isdir(BOOKFACE_RAW):
+        return posts, ["bookface: no raw shards yet — run scripts/arc_bookface.py"]
+
+    now = time.time()
+    for fname in sorted(os.listdir(BOOKFACE_RAW)):
+        if not fname.endswith(".jsonl"):
+            continue
+        path = os.path.join(BOOKFACE_RAW, fname)
+        age_h = (now - os.path.getmtime(path)) / 3600.0
+        if age_h > max_age_h:
+            errors.append(f"bookface/{fname[:-6]}: stale, {int(age_h)}h old "
+                          f"(limit {max_age_h}h) — rerun scripts/arc_bookface.py")
+            continue
+        posts.extend(_load_jsonl(path))
+    return posts, errors
+
+
+def fetch_posts(limit_per_query=6):
+    """Legacy Launch-YC lane via the `yc` CLI.
+
+    Kept only for the `launches` entity. The `forum` entity moved to Bookface-over-Arc
+    (load_bookface_posts) because this CLI authenticates as a different person and its
+    token has been dead since 2026-08-05 — 2 entities x 11 queries produced exactly the
+    22 failures that flagged the digest degraded every run.
+    """
+    posts, errors = [], []
+    for entity in ("launches",):
         for query in POST_QUERIES:
             try:
                 res = _yc({"entity": entity, "query": query,
@@ -116,6 +158,41 @@ def fetch_posts(limit_per_query=6):
                               "blurb": (row.get("one_liner") or row.get("searchable_title")
                                         or "")[:160]})
     return posts, errors
+
+
+def _news_card(rec):
+    """The primary email unit: a news event, why it matters, and TWO links.
+
+    the operator's requirement (2026-08-15): always link to the source the item was found in AND to
+    the company's own website. The source proves where it came from; the company site is where
+    he actually goes to evaluate.
+    """
+    company = rec.get("company") or "?"
+    tier = rec.get("tier") or ""
+    label, colour = TIER_LABEL.get(tier, (tier.replace("_", " ").title(), "#333"))
+    what = rec.get("what_happened") or ""
+    why = rec.get("why_it_matters") or ""
+    ask = rec.get("validation_question") or ""
+    known = rec.get("known")
+    links = []
+    if rec.get("company_url"):
+        links.append(f'<a href="{rec["company_url"]}" style="color:#1558b0"><b>{company} site</b></a>')
+    if rec.get("source_url"):
+        src = rec.get("source_publisher") or "source"
+        links.append(f'<a href="{rec["source_url"]}" style="color:#666">{src}</a>')
+    meta = " · ".join(x for x in [rec.get("published", "")[:16],
+                                  f"I={rec['I']}" if rec.get("I") is not None else "",
+                                  "already tracked" if known else ""] if x)
+    return f"""
+<div style="margin:0 0 20px 0;padding:12px 14px;border-left:3px solid {colour}">
+  <div style="font-size:15px;font-weight:600">{company}
+    <span style="font-weight:400;font-size:12px;color:{colour}"> · {label}</span></div>
+  <div style="margin:5px 0;font-size:14px;color:#222">{what}</div>
+  <div style="margin:5px 0;font-size:14px;color:#0b7a3b"><b>Why:</b> {why}</div>
+  {f'<div style="margin:4px 0;font-size:13px;color:#8a5a00"><b>Ask them:</b> {ask}</div>' if ask else ''}
+  <div style="font-size:12px;color:#888;margin-top:6px">{' · '.join(links)}
+    {f'<span style="color:#bbb"> — {meta}</span>' if meta else ''}</div>
+</div>"""
 
 
 def _normalize(rec):
@@ -160,14 +237,107 @@ def _card(rec):
 </div>"""
 
 
-def build_html(new_companies, new_posts, standing, errors):
+SIGNAL_LABEL = {
+    "hiring_automation": ("Hiring — automation", "#0a7"),
+    "facility": ("New facility", "#0a7"),
+    "funding": ("Funding", "#1558b0"),
+    "exec_move": ("Exec move", "#845"),
+    "partnership": ("Partnership", "#845"),
+    "launch": ("Launch", "#555"),
+    "press": ("Press", "#888"),
+}
+
+
+def _health_banner(unhealthy):
+    """Surface dark lanes IN THE EMAIL (principle 4).
+
+    ingest_yc reported healthy for 259h while dead. A health check nobody reads is
+    the same as no health check, so the failure now arrives in the inbox rather than
+    waiting to be discovered in a JSON file.
+    """
+    if not unhealthy:
+        return ""
+    lines = []
+    for name, r in unhealthy:
+        if r["stale"]:
+            why = f"stale — last ran {int(r['age_h'])}h ago (limit {r['max_age_hours']}h)"
+        else:
+            why = f"{r.get('failures', 0)} failures this run"
+        lines.append(f"<b>{name}</b> — {why}")
+    rows = "<br>".join(lines)
+    return ('<div style="margin:0 0 16px 0;padding:10px;background:#fff6f6;'
+            'border-left:3px solid #a11;font-size:12px;color:#a11">'
+            f'<b>⚠ {len(unhealthy)} lane(s) not healthy</b> — findings below are incomplete<br>'
+            f'{rows}</div>')
+
+
+def _signal_section(hot):
+    """Heat-ranked entities: what got interesting, not what merely exists."""
+    if not hot:
+        return ""
+    out = [('<h3 style="margin:22px 0 8px 0;font-size:15px">What changed '
+            '<span style="color:#999;font-weight:400">(decayed by recency)</span></h3>')]
+    for r in hot:
+        kinds = " · ".join(
+            f'<span style="color:{SIGNAL_LABEL.get(k, (k, "#888"))[1]}">'
+            f'{SIGNAL_LABEL.get(k, (k, "#888"))[0]}{"" if v == 1 else f" ×{v}"}</span>'
+            for k, v in sorted(r["kinds"].items(), key=lambda kv: -kv[1]))
+        latest = r["signals"][0] if r.get("signals") else {}
+        name = r.get("entity_name") or r.get("entity_key", "")
+        out.append(
+            f'<div style="margin:0 0 11px 0">'
+            f'<b style="font-size:14px">{name}</b> '
+            f'<span style="color:#999;font-size:12px">heat {r["heat"]:.1f} · '
+            f'{r["count"]} signal{"" if r["count"] == 1 else "s"} · '
+            f'{r["age_days"]:.0f}d ago</span><br>'
+            f'<span style="font-size:11px;text-transform:uppercase">{kinds}</span><br>'
+            f'<a href="{latest.get("url", "")}" style="color:#1558b0;font-size:13px">'
+            f'{latest.get("title", "")[:130]}</a></div>')
+    return "\n".join(out)
+
+
+def _discovery_section(discoveries):
+    """Real events about companies the radar has never seen — the lead feed."""
+    if not discoveries:
+        return ""
+    out = [('<h3 style="margin:22px 0 8px 0;font-size:15px">New to the radar '
+            '<span style="color:#999;font-weight:400">(unmatched — worth a look)</span></h3>')]
+    for d in discoveries[:8]:
+        label, colour = SIGNAL_LABEL.get(d["kind"], (d["kind"], "#888"))
+        out.append(
+            f'<div style="margin:0 0 8px 0;font-size:13px">'
+            f'<span style="font-size:11px;color:{colour};text-transform:uppercase">{label}</span><br>'
+            f'<a href="{d.get("url", "")}" style="color:#1558b0">{d.get("title", "")[:130]}</a>'
+            f'</div>')
+    return "\n".join(out)
+
+
+def build_html(new_companies, new_posts, standing, errors, news=None,
+               hot=None, discoveries=None, unhealthy=None):
+    news = news or []
     today = datetime.now().strftime("%A %-d %B")
+    bits = []
+    if hot:
+        bits.append(f"{len(hot)} moving")
+    if news:
+        bits.append(f"{len(news)} from the news")
+    if new_companies:
+        bits.append(f"{len(new_companies)} new companies")
+    headline = " · ".join(bits) or "quiet day"
     parts = [f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
 font-size:14px;color:#111;max-width:760px;line-height:1.45">
 <div style="font-size:12px;color:#888;margin-bottom:2px">Partner Radar · {today}</div>
-<h2 style="margin:0 0 14px 0;font-size:19px">{len(new_companies)} new companies · {len(new_posts)} new posts</h2>"""]
+<h2 style="margin:0 0 14px 0;font-size:19px">{headline}</h2>""",
+             _health_banner(unhealthy or []),
+             _signal_section(hot or []),
+             _discovery_section(discoveries or [])]
 
-    if not new_companies and not new_posts:
+    # News is the primary lane — what moved, why it matters, source + company link.
+    if news:
+        for rec in news:
+            parts.append(_news_card(rec))
+
+    if not news and not new_companies and not new_posts:
         parts.append('<p style="color:#666">Nothing new since the last run. '
                      'Standing shortlist below so the thread stays warm.</p>')
 
@@ -203,9 +373,18 @@ font-size:14px;color:#111;max-width:760px;line-height:1.45">
         parts.extend(_card(r) for r in standing)
 
     if errors:
+        # Collapse identical failures. One dead upstream produces one error per query, which
+        # rendered as eight identical "403 forbidden" lines and buried the actual signal.
+        tallies = {}
+        for e in errors:
+            msg = e.split(": ", 1)[-1].strip()
+            tallies[msg] = tallies.get(msg, 0) + 1
+        lines = [f"{m} <span style='color:#c88'>(&times;{n})</span>" if n > 1 else m
+                 for m, n in sorted(tallies.items(), key=lambda kv: -kv[1])[:6]]
         parts.append('<div style="margin-top:22px;padding:10px;background:#fff6f6;'
                      'border-left:3px solid #a11;font-size:12px;color:#a11">'
-                     '<b>Degraded this run</b><br>' + "<br>".join(errors[:8]) + '</div>')
+                     f'<b>Degraded this run</b> — {len(errors)} failures<br>'
+                     + "<br>".join(lines) + '</div>')
 
     parts.append('<div style="margin-top:24px;font-size:11px;color:#aaa">'
                  'partner-radar · ~/Desktop/partner-radar · ranked by time-to-deployment</div></div>')
@@ -217,6 +396,19 @@ def main():
     sources = _cfg("sources.yaml")
     delivery = sources.get("delivery") or {}
     seen = _seen()
+
+    # --- Primary lane: LLM-judged news -----------------------------------------------------
+    judged = _load_jsonl(os.path.join(ROOT, "data", "news", "judged.jsonl"))
+    seen.setdefault("news", {})
+    news = []
+    for rec in judged:
+        key = rec.get("source_url") or rec.get("company")
+        if not key or key in seen["news"] or rec.get("tier") in ("T6_PASS", "T0_EXISTING"):
+            continue
+        news.append(rec)
+        seen["news"][key] = int(time.time())
+    news.sort(key=lambda r: SECTIONS.index(r["tier"]) if r.get("tier") in SECTIONS else 99)
+    news = news[:20]
 
     reranked = _load_jsonl(os.path.join(DERIVED, "reranked.jsonl"))
     scored = _load_jsonl(os.path.join(DERIVED, "scored.jsonl"))
@@ -250,19 +442,20 @@ def main():
     new_companies.sort(key=rank)
     new_companies = new_companies[:30]
 
-    posts, errors = fetch_posts()
-
-    # Semantic web sweep: feature launches and pivots announced in the wild, not on any
-    # launch page. This is the lane that surfaces non-accelerator companies — the
-    # Microfactory class — which no batch source can reach.
-    try:
-        from radar.sources_ext import fetch_web_signals
-        sigs, sig_errs = fetch_web_signals(days=14, per_query=6)
-        posts.extend(sigs)
-        errors.extend(sig_errs)
-    except Exception as ex:
-        errors.append(f"web_semantic: {str(ex)[:120]}")
-
+    # POSTS LANE RETIRED 2026-08-15. Both fetchers here (`fetch_posts` for Launch YC /
+    # Bookface, and Exa's `fetch_web_signals`) route through the `yc` binary, which carries
+    # the account holder's auth. Since that token broke they produced 22 identical 403s on every single
+    # run — a permanent red banner that trained the reader to ignore the failure section,
+    # which is worse than having no section at all.
+    #
+    # Nothing is lost: news.py covers the same discovery ground through four keyless feeds
+    # (Google News RSS, HN Algolia, The Robot Report, IEEE Spectrum) and does it better,
+    # because it reaches non-accelerator companies that Bookface never contained.
+    # RESTORED 2026-08-16 via Bookface-over-Arc. The lane above was retired because the
+    # only path to it was the `yc` binary carrying someone else's expired token. Reading
+    # Bookface through the Arc Space that is already signed in needs no credential at all,
+    # so the lane comes back without the permanent red banner that justified killing it.
+    posts, errors = load_bookface_posts()
     new_posts = []
     for p in posts:
         if p["id"] in seen["posts"]:
@@ -274,19 +467,44 @@ def main():
     # Never send a blank email: if nothing is new, carry the top standing candidates so the
     # channel stays useful and the operator doesn't learn to ignore it.
     standing = []
-    if not new_companies and not new_posts:
+    if not news and not new_companies and not new_posts:
         standing = sorted(pool, key=lambda r: -(r.get("scores", {}).get("A", 0)))[:6]
 
-    html = build_html(new_companies, new_posts, standing, errors)
+    # --- Signals lane: what CHANGED, decayed by recency -------------------------------------
+    hot, discoveries, unhealthy = [], [], []
+    try:
+        from radar.run import health_report
+        from radar.signals import load_signals, ranked
+        hot = ranked(load_signals(os.path.join(ROOT, "data", "raw", "signals")),
+                     limit=10, min_heat=0.5)
+        discoveries = _load_jsonl(os.path.join(DERIVED, "signal_discoveries.jsonl"))
+        # A lane that stopped running must reach the inbox, not sit in a JSON file.
+        unhealthy = sorted(
+            ((name, r) for name, r in health_report().items() if r.get("unhealthy")),
+            key=lambda kv: kv[0])
+    except Exception as ex:                                    # noqa: BLE001 — principle 4
+        errors.append(f"signals: {type(ex).__name__}: {str(ex)[:90]}")
+
+    html = build_html(new_companies, new_posts, standing, errors, news=news,
+                      hot=hot, discoveries=discoveries, unhealthy=unhealthy)
     if dry:
         print(html)
         return 0
 
     from mailer import send
-    subject = (f"Partner Radar — {len(new_companies)} companies, {len(new_posts)} posts"
-               if (new_companies or new_posts) else "Partner Radar — quiet day")
-    send(delivery.get("sender_account", "personal"),
-         delivery.get("to", "you@example.com"), subject, html)
+    top = news[0]["company"] if news else None
+    warn = f"⚠{len(unhealthy)} " if unhealthy else ""
+    if hot:
+        lead = hot[0].get("entity_name") or "movement"
+        subject = f"{warn}Partner Radar — {len(hot)} moving, incl. {lead}"
+    elif news:
+        subject = f"{warn}Partner Radar — {len(news)} finds" + (f", incl. {top}" if top else "")
+    elif new_companies or new_posts:
+        subject = f"{warn}Partner Radar — {len(new_companies)} companies, {len(new_posts)} posts"
+    else:
+        subject = f"{warn}Partner Radar — quiet day"
+    send(delivery.get("sender_account", "synphony"),
+         delivery.get("to", "youruser@ucla.edu"), subject, html)
 
     seen["last_sent"] = int(time.time())
     os.makedirs(DERIVED, exist_ok=True)
@@ -298,7 +516,12 @@ def main():
                         "companies": len(new_companies), "posts": len(new_posts),
                         "failures": len(errors), "degraded": bool(errors)}
     json.dump(health, open(HEALTH, "w"), indent=2)
-    print(f"sent: {len(new_companies)} companies, {len(new_posts)} posts, {len(errors)} errors")
+    # Report the PRIMARY lane first. This line counted only companies and posts, so the
+    # 06:00 run that emailed 25 freshly-judged news items logged "sent: 0 companies,
+    # 0 posts" — a system misreporting its own main output, which is the exact failure
+    # class the health work exists to prevent.
+    print(f"sent: {len(news)} news, {len(new_companies)} companies, "
+          f"{len(new_posts)} posts, {len(errors)} errors")
     return 0
 
 

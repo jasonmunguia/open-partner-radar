@@ -1,0 +1,97 @@
+---
+name: partner-radar
+description: Reads industry news continuously and judges every item with an LLM against one thesis, sorting companies into PARTNER / ABSORB / WATCH / INTEL. Use when asked to find partners, suppliers, or competitors, or to run the partner-radar pipeline.
+---
+
+# Partner Radar — judge procedure
+
+This is the **method**, with the thesis left as placeholders. The pipeline's stage-2 pass runs
+`claude -p "Use the partner-radar skill …"`, so without this file the judge has no procedure
+and produces meaningless tiers. Copy to `SKILL.md`, fill in the four `<<< >>>` blocks, and
+install at `~/.claude/skills/partner-radar/SKILL.md`.
+
+Split deliberately: everything outside the `<<< >>>` blocks is method that works for anyone.
+Inside them is your company's thesis, which is the only part that should ever differ.
+
+## The objective function — read before scoring anything
+
+> <<< ONE SENTENCE. The single criterion every company is ranked by. Ours was
+> "does this shorten the path to a live deployment?" Yours should be equally narrow —
+> a criterion that ranks everything ranks nothing. >>>
+
+Reason per-company about which **specific bottleneck** a company removes. Never rank by
+technology quality, team pedigree, or how interesting the company is. If you cannot name the
+bottleneck it touches, it is not relevant — drop it.
+
+## Tiers — one criterion decides PARTNER vs ABSORB
+
+Apply this to the company's **technology**, not to timing or urgency:
+
+> Is it **inside** your core competency, or **outside** it?
+
+| Tier | Rule | Action |
+|---|---|---|
+| **PARTNER** | **Outside** the competency. <<< e.g. hardware, sensors, physical infrastructure, human services >>> | Buy it and keep buying. Never build |
+| **ABSORB** | **Inside** the competency. <<< e.g. the models/algorithms that are your actual product >>> | Integrate, deploy, then build in-house |
+| **WATCH** | Competitors — anyone selling <<< your product >>> to <<< your customer >>> | Monitor for intel. **Never contact** |
+| **INTEL** | Industry context: regulation, funding patterns, substrate shifts | Read it. No action |
+| `PASS` | No fit | — |
+
+Why this axis and not urgency: an earlier version split on "act now" vs "track later", which
+conflated urgency with disposability. Measured across 141 judged rows, the two tiers' mean
+internalizability scores were 46 and 49 — statistically indistinguishable, proving the split
+captured nothing. Competency boundary is a property of the *technology*, so it does not drift.
+
+**`I` (internalizability, 0–100) applies to ABSORB rows only.** For a PARTNER you are never
+building it, so the score is noise that invites the wrong conversation.
+
+**The competitor gate is the most expensive error available.** A component supplier and a
+competitor have nearly identical keyword signatures. This call requires *reading the company*,
+never keywords.
+
+## Workflow
+
+Steps 2–4 are LLM work by design. No keyword gate decides what is interesting — a keyword
+cannot separate "company shipped a gripper" from "listicle mentioning grippers".
+
+1. **Fetch** — `python3 -m radar.run news`. Asserts a yield floor: an unusually low count is a
+   **failure**, not a quiet news day.
+2. **Triage** — read every queued item's title + summary. Keep only those where *a specific
+   company did a specific thing* touching the thesis. Expect to keep 10–20%.
+3. **Read** — fetch the article **and the company's own site**. Mandatory. The company site is
+   authoritative; directory tags and article summaries routinely mislead.
+4. **Judge** — append to `data/news/judged.jsonl`: `company`, `company_url` (their site),
+   `source_url`, `source_publisher`, `published`, `what_happened`, `why_it_matters` (naming the
+   *specific* bottleneck), `tier`, `I` (ABSORB only), `validation_question`, `known`.
+5. **Co-mentions (free)** — also emit `companies_mentioned`: every *other* company the article
+   names. This costs ~20 output tokens because the article is already in your context, and it
+   is how the system finds companies its preset queries never reach.
+6. **Gap search** — pick 2–3 thesis areas today's headlines did not cover and run live
+   searches on them now.
+7. **Coverage critic** — name any category or **geography** absent entirely, and append 1–3
+   queries to `config/discovered_queries.yaml` so tomorrow's deterministic fetch covers it
+   permanently.
+
+## Where AI is used, and where it deliberately is not
+
+The rule: **non-AI where being wrong is invisible; AI where judgment is required and a mistake
+is at least legible.**
+
+| Script (deterministic) | LLM |
+|---|---|
+| Fetch, dedup, counting, yield floors | Triage to the ~10–20% worth reading |
+| Lead dedup against the known universe | Reading a company and deciding its tier |
+| Health, staleness, delivery | Noticing a category **never queried** |
+
+Counting is code's job — a miscount is silent. Noticing an absence is the LLM's job — no
+amount of counting reveals what was never there.
+
+Cost note: running this on a Claude subscription makes the marginal dollar cost of the daily
+pass zero. The scarce resource is the shared rate-limit window, so **schedule** the run away
+from your own working hours. That is the real cost lever, not model choice.
+
+## Your thesis
+
+> <<< Fill in: what you build, what you buy, who your customers are, and the one or two
+> named bottlenecks a partner could remove. The judge reads this to write `why_it_matters`,
+> so vagueness here produces vague findings downstream. >>>

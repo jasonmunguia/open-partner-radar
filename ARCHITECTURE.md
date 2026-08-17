@@ -1,7 +1,10 @@
 # Partner Radar — architecture
 
-Finds companies across accelerators and launch channels that your company can (a) partner with,
+Finds companies across accelerators and launch channels that Synphony can (a) partner with,
 (b) buy from, (c) sell to, or (d) internalize. Built 2026-07-29.
+
+> Setup, the dependency manifest, and the failure signatures live in `README.md` — start
+> there cold. Bringing a human operator online: `ONBOARDING.md`. This file is design only.
 
 ## Why this exists / what it is not
 
@@ -32,8 +35,16 @@ Tier B — continuous        poll daily        launches land any day
   x_robotics, launch_yc_public, product_hunt, newsletters
 ```
 
-The digest runs daily and **suppresses empty sends**. Tier A results appear in whichever digest
-follows their poll. T1 hits alert immediately, out of band.
+Design vs. built: `founders_inc`, `product_hunt`, and `newsletters` are designed, not built;
+`x_robotics` is built but disabled (Exa cannot see X — see `config/sources.yaml`). The
+running set is exactly what `config/sources.yaml` enables: `yc`, `a16z_speedrun`,
+`web_semantic`, and `launch_yc_public` (inline in `radar/digest.py`).
+
+The digest runs daily. Original design suppressed empty sends; the shipped `radar/digest.py`
+instead sends a "quiet day" email carrying a standing shortlist, so the channel never trains
+you to ignore it — code wins over the `suppress_empty_digest` key, which nothing reads.
+Tier A results appear in whichever digest follows their poll. Instant out-of-band T1 alerts
+are designed (`instant_alert_tiers`), not yet built.
 
 ## Data flow
 
@@ -49,7 +60,7 @@ follows their poll. T1 hits alert immediately, out of band.
 `raw/` is append-or-replace-whole-shard and never edited by the scorer. `derived/` is
 disposable — delete it and the next run rebuilds it identically from `raw/`.
 
-## Scoring — five axes, your company lens
+## Scoring — five axes, Synphony lens
 
 Deliberately five separate scores, not one blended number, because they answer different
 questions and a high `S` with a high `I` is a completely different action than a high `S`
@@ -68,10 +79,10 @@ with a low `I`.
   low `I` means partner properly or pool.
 - **L — Leverage asymmetry.** Their stage vs. ours. Small team + recent batch + active =
   they need a deployed design-partner logo more than we need them. This is what produced
-  Microfactory at $18,000 against a $24,950 list price, papered hardware-only.
+  Example Partner C at $18,000 against a $24,950 list price, papered hardware-only.
 
 **Competitor separation is a hard gate, not a score.** A large share of YC robotics companies
-*do what your company does* — deploy arms into industrial settings. Those are `T5 WATCH`, never
+*do what Synphony does* — deploy arms into industrial settings. Those are `T5 WATCH`, never
 contacted. Confusing "sells me a component" with "competes for my customer" is the single
 most expensive classification error available here.
 
@@ -81,7 +92,7 @@ most expensive classification error available here.
 |---|---|---|
 | `T1_PARTNER_NOW` | High `S`, high `L`, buy/partner immediately | component or model we need, favorable terms available |
 | `T2_ABSORB_TRACK` | High `S`, high `I` | partner, deploy, internalize on a 2–3 quarter clock |
-| `T3_CUSTOMER` | High `D` | route to the your company ICP pipeline |
+| `T3_CUSTOMER` | High `D` | route to the Synphony ICP pipeline |
 | `T4_CHANNEL` | High `C` | borrowed distribution |
 | `T5_WATCH` | Competitor | monitor, never contact |
 | `T6_PASS` | — | no fit |
@@ -91,12 +102,12 @@ most expensive classification error available here.
 
 `config/exclusions.yaml` holds three lists, all checked before alerting:
 
-1. **existing** — current partners and relationships (Generalist AI, Dyna Robotics,
-   Microfactory, your company itself). Classified `T0_EXISTING`, never alerted as new.
-2. **do_not_contact** — competitors we deliberately study but never approach (the Cyntronic
+1. **existing** — current partners and relationships (Example Partner A, Example Partner B,
+   Example Partner C, Synphony itself). Classified `T0_EXISTING`, never alerted as new.
+2. **do_not_contact** — competitors we deliberately study but never approach (the Example Competitor B
    rule). Alerting one of these a partnership request is an unforced credibility error.
 3. **crm_seen** — seeded read-only from the Notion CRM so the radar never re-surfaces a
-   company already in the pipeline. Same discipline as the your company lead-gen run, which
+   company already in the pipeline. Same discipline as the Synphony lead-gen run, which
    excluded 109 contacts + 89 companies this way.
 
 ## Access notes (verified 2026-07-29)
@@ -115,26 +126,93 @@ most expensive classification error available here.
 - CSV quirks to handle: URLs carry a leading `'` (spreadsheet-safety prefix) and empty
   repeated fields render as `""""`.
 
-## Account attribution, when the account is not yours
+## Account attribution
 
-Accelerator networks (YC's Bookface, and most private founder communities) have
-no public API. Access runs through a member account, which for many operators
-means an account belonging to a colleague or co-founder rather than to them.
+The CLI authenticates as **the authorized account holder** (`teammate@example.com`), Synphony's co-founder —
+not the operator. Every query is attributed to his account. A third consequence, learned 2026-08-09:
+authenticating as anyone else can revoke `tools run` outright — every call 403s while
+`yc me` still succeeds, killing all three yc-riding lanes (ingest, posts, Exa web) at once
+while `health.json` stays green. Full signature and fix: README.md "Failure signatures".
+Two standing consequences:
 
-If that describes you, two rules are not optional:
+1. Volume is a shared-reputation cost. Tier A's ~60h cadence is deliberately modest.
+2. **Synphony lens only on this account.** Schematic-lens prospecting must not run through
+   the account holder's Bookface activity trail — that reopens the compartmentalization the operator closed in
+   July from a new direction. `candidates` (the personal-data candidate index) is excluded
+   from the pipeline entirely; it adds nothing to partner prospecting.
 
-1. **Volume is a shared-reputation cost, not a rate limit.** Every query is
-   attributed to the account holder, not to you. This is the actual reason the
-   batch-source cadence is ~60 hours rather than hourly — the universe only
-   changes a few times a year, so polling harder buys nothing and spends someone
-   else's standing.
+---
 
-2. **One purpose per account.** Do not run prospecting for two different ventures
-   through the same member's activity trail. Anyone who can see that trail can
-   reconstruct what both are working on, and the account holder did not consent
-   to being the join key between them.
+# v3 — news-first, source-decoupled (2026-08-15)
 
-Personal-data endpoints — candidate directories, member profiles — are excluded
-outright. Those exist for hiring, and mining them for company research is both
-outside what the account was granted for and the fastest way to lose it.
+## Prior art: what was mined, taken, and rejected
 
+Done *after* v1 shipped, which was the mistake. Recorded here so it is never skipped again.
+
+| Tool | What it does | Verdict |
+|---|---|---|
+| [gitdealflow](https://signals.gitdealflow.com/) | 4 GitHub signals — contributor growth >50%, 3+ new repos/30d, commit velocity +150%, framework migration. 369 signals, 15 sectors incl. Robotics | **Took the idea**: rank on momentum, not description. Not the implementation |
+| [Harmonic.ai](https://harmonic.ai/) | 35M companies, cohort-based **daily refresh**; Scout: brief → companies + warmest intro path + draft outreach | **Took**: the output shape (event + why + next action). Rejected the platform — enterprise priced, generic thesis |
+| Specter | Cross-channel growth signals (web traffic, hiring, product) | **Rejected the hiring half** — the operator ruled ATS signals out explicitly |
+| Tracxn / Dealroom / Crunchbase | Company databases, free tiers | **Rejected as primary** — directories, the exact failure mode of v1 |
+| internship-radar (own) | 139 ATS sources, `seen.json` delta feed | **Took the delta-feed architecture. Rejected the sources.** |
+
+**The lesson the whole industry already knew:** entities are the substrate, *signals* are the
+product. Nobody sells a static directory. v1 built one.
+
+## Why v1's email was useless
+
+Two independent causes, both mine.
+
+1. **Catalogue, not feed.** internship-radar works because *jobs are events* — they appear,
+   alert once, and are gone. partner-radar failed because *companies are entities* that sit
+   unchanged, so re-scoring static text daily either suppressed everything (dedup) or
+   re-dumped the map. Both landed in the operator's inbox.
+2. **Directories describe application-time, not now.** Synphony's own Bookface entry still
+   reads "robots for strawberries," months out of date. Ranking on that text cannot work.
+
+Fix: **news discovers, directories enrich.** Never the reverse.
+
+## Principles added in v3
+
+8. **No source's schedule, health, or failure may depend on another source's artifact.**
+   `run_daily.sh` gated *all* ingest on a YC shard's age. When YC's auth died, a16z — no
+   auth, working perfectly — sat 274h stale behind a dead lane's freshness check. Each
+   source now gates on its own artifact via `stale_gate`, with per-source entry points
+   (`ingest-yc`, `ingest-a16z`).
+
+9. **The discovery lane may not depend on credentials that belong to another person.**
+   YC/Bookface auth was the account holder's; it expired and only he could refresh it. All four discovery
+   feeds are now keyless (Google News RSS, HN Algolia, The Robot Report, IEEE Spectrum).
+   Verified: 330 items/sweep, 0 errors.
+
+10. **Retired ≠ broken.** Health flagged the deliberately-disabled YC lane as `STALE`
+    forever. A health report that cries wolf is one you stop reading — the exact failure the
+    health layer exists to prevent. Disabling a source in `sources.yaml` is now the single
+    switch that also silences its alarm.
+
+11. **Corpus-derived stopwords beat hand-maintained lists.** Story dedup on raw Jaccard
+    merged *"Figure AI raises funding for humanoid robots"* with *"Apptronik raises funding
+    for humanoid robots"* at 0.667 — two companies, silently collapsed. In this corpus
+    `robot`/`humanoid`/`funding` carry no story identity; the company name does. Generic
+    tokens are now derived by document frequency from the batch itself, so they self-tune
+    instead of rotting. Over-merging hides a company (expensive); under-merging shows a
+    duplicate (cheap) — both gates are set conservatively toward the cheap failure.
+
+## Current shape
+
+```
+discovery (keyless, daily)          judgement (LLM)           delivery
+──────────────────────────          ───────────────           ────────
+Google News RSS ─┐
+HN Algolia       ├─→ news.py ──→ queue.jsonl ──→ judged.jsonl ──→ digest
+The Robot Report │   (dedup:                     (tier, I, why,     (source link +
+IEEE Spectrum   ─┘    URL + story)                ask, known)        company link)
+
+enrichment (no auth)                state
+────────────────────                ─────
+a16z API ──→ raw/a16z ──→ score ──→ scored.jsonl · reranked.jsonl (dossier)
+```
+
+`yc` is retired but not deleted — 725 rows keep scoring, the dossier stands, and reviving it
+is one config flag plus a device login.

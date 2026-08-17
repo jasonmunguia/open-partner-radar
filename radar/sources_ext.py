@@ -13,7 +13,7 @@ a16z API (verified 2026-07-30): https://speedrun-talent-network.com/api/v1/
     have cohort=None, so the 9-month rule cannot be applied from this API alone — they are
     tagged `age_unknown` and the rerank must check a founded date before promoting them.
 
-X / web discovery: the user's requirement is that a company's pertinent news is often a
+X / web discovery: the operator's requirement is that a company's pertinent news is often a
 *feature launch or pivot* announced only on X, never on a launch page. Semantic search
 catches those; keyword feed-scraping does not.
 """
@@ -31,7 +31,7 @@ UA = {"User-Agent": "partner-radar/1.0", "Accept": "application/json"}
 # 27 Jul - 11 Oct 2026. SR005 and earlier fall outside the window.
 RECENT_COHORTS = {"SR006", "SR007"}
 
-# a16z industry tags worth keeping for the your company lens.
+# a16z industry tags worth keeping for the Synphony lens.
 RELEVANT_INDUSTRIES = {"American Dynamism", "Deep Tech", "Infra", "AI"}
 
 
@@ -147,7 +147,7 @@ def _yc_web(payload, timeout=180):
 def fetch_x_signals(days=14, per_query=8, include_x=True):
     """Semantic sweep for feature launches and pivots — the things announced only on X.
 
-    Not a keyword feed scrape. the user's point: a company's relevant event is often a new
+    Not a keyword feed scrape. the operator's point: a company's relevant event is often a new
     feature or a pivot posted to X and nowhere else, and only semantic search finds those.
     """
     signals, errors, seen = [], [], set()

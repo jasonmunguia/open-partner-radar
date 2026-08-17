@@ -1,0 +1,6 @@
+# Python deps for the partner-radar pipeline. Everything else is stdlib.
+# The heavier dependencies are binaries, not pip packages — the `yc` CLI (YC ingest, digest
+# posts, AND the Exa web sweep all ride it) and the `claude` CLI (stage-2 rerank).
+# See README.md "Dependencies" for where each one comes from.
+PyYAML>=6.0
+certifi>=2024.2.2   # stock macOS python3 ships no CA bundle; run_daily.sh exports SSL_CERT_FILE from this

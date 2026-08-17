@@ -1,0 +1,20 @@
+# EXAMPLE ONLY — replace with your own before running.
+#
+# This file is the CONTEXT half of the Bring-Your-Own-Context split: the method in
+# radar/ works for anyone, but what counts as a good partner is yours to define.
+# Copy to config/rubric.yaml and edit.
+#
+# The scoring thesis. Weights encode what YOUR business needs from a partner.
+# The shipped Synphony rubric ranks by time-to-deployment; yours will differ.
+objective: "one sentence naming the outcome you rank by"
+
+axes:
+  A:
+    label: "accelerant — which blocker does this remove?"
+    weight: 1.0
+  H:
+    label: "hardware fit"
+    weight: 1.0
+
+penalties:
+  generic_dataset: -2

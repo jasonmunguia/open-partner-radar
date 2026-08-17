@@ -1,6 +1,6 @@
 # Learnings
 
-Append-only, newest first. `ARCHITECTURE.md` holds the seven design principles
+Append-only, newest first. `ARCHITECTURE.md` holds the 11 design principles
 and the failure behind each. This file holds everything since.
 
 ---
