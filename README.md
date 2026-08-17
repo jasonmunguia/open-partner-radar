@@ -149,3 +149,18 @@ ONBOARDING.md):
   `reranked.jsonl` only. It must also skip `rerank_skipped.jsonl` — nightly
   passes have been re-reading already-adjudicated skips at full cost (measured 29/30 on
   2026-08-09). Fix belongs in the prompt string; left for a deliberate code change.
+
+## License and attribution
+
+Apache License 2.0 — **open for anyone to use, fork, and build on, with credit.**
+
+Apache-2.0 was chosen over MIT deliberately. Both require that copies carry the copyright
+notice, but Apache adds a `NOTICE` file whose contents must be reproduced **in the
+documentation or display of any derivative work** (Section 4(d)) — which is the closest a
+software licence gets to "credit me visibly" rather than "bury my name in a LICENSE file
+nobody opens." It also grants patent rights explicitly, which protects both the author and
+anyone shipping on top of this.
+
+If you use this, keep `NOTICE` intact. Attribution is the only thing asked in return.
+
+Original author: **Jason Munguia** — https://github.com/jasonmunguia/open-partner-radar
