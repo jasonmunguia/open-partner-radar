@@ -5,6 +5,23 @@ and the failure behind each. This file holds everything since.
 
 ---
 
+## 2026-09-01 — A green pipeline with an empty product
+
+A fresh-clone audit of the public edition followed the README exactly and got exit 0 at
+every step — while the scorer classified 312 of 312 companies as no-fit and queued zero
+for review. The hand-written `rubric.yaml.example` carried none of the six keys
+`score.py` reads. Nothing errored, because absent keys default to empty and empty
+scores to zero. **A leak audit proves nothing secret escaped; it says nothing about
+whether what shipped works.** The example configs are now the real files, scrubbed, and
+`tests/test_cold_clone.py` scores a perfect-fit row and fails if it lands on PASS.
+
+Same audit, second lesson: a personal email address shipped in cleartext because it
+shared no substring with any token on the scrub list — and the audit list was the
+same list, so both agreed it was clean. A scrub and an audit that share a blind spot
+always agree with each other. The fix is not one more token; it is a test that greps the
+*exported tree* for the shapes of things (`@gmail.com`, `/Users/<name>`), not the
+names you already thought of.
+
 ## 2026-08-03 — Depersonalizing surfaced borrowed-credential detail
 
 The private version documented that the accelerator CLI authenticates as a

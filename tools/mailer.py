@@ -9,7 +9,7 @@ Usage (from the repo root):
                                                              # (https://myaccount.google.com/apppasswords)
     python3 tools/mailer.py list
     python3 tools/mailer.py test <name> <recipient-address>  # proves SMTP end to end
-    python3 tools/mailer.py send <name> --to x@y.com --subject "Hi" --html-file body.html
+    python3 tools/mailer.py send <name> --to recipient@example.com --subject "Hi" --html-file body.html
 
     from mailer import send
     send("<name>", "recipient@example.com", "Subject", "<p>html</p>")
