@@ -92,9 +92,13 @@ log "harvesting leads…"
 # Wired in 2026-08-29. Built and hand-verified on 08-16 but never added here, so the shard went
 # 308h stale and the digest flagged one failure every run for twelve days. A capability that
 # only runs when someone types it is not wired in.
-log "reading bookface via Arc…"
-"$PY" scripts/arc_bookface.py --feed launch_bookface --feed recruiting --out data/raw/bookface \
-  || log "WARN bookface returned $? (Arc closed or debug port down — digest degrades this lane only)"
+if [ -f scripts/arc_bookface.py ]; then
+  log "reading bookface via Arc…"
+  "$PY" scripts/arc_bookface.py --feed launch_bookface --feed recruiting --out data/raw/bookface \
+    || log "WARN bookface returned $? (Arc closed or debug port down — digest degrades this lane only)"
+else
+  log "bookface lane not present (optional; operator-local capture script) — skipping"
+fi
 
 # --- 3d. Classify news into decayed signals -----------------------------------------------
 # Same omission as above: signals ran three times by hand on 08-16 then sat STALE for 306h.
