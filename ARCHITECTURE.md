@@ -79,7 +79,7 @@ with a low `I`.
   low `I` means partner properly or pool.
 - **L — Leverage asymmetry.** Their stage vs. ours. Small team + recent batch + active =
   they need a deployed design-partner logo more than we need them. This is what produced
-  Example Partner C at $18,000 against a $24,950 list price, papered hardware-only.
+  Example Partner C at [deal price] against a [list price] price, papered hardware-only.
 
 **Competitor separation is a hard gate, not a score.** A large share of YC robotics companies
 *do what Synphony does* — deploy arms into industrial settings. Those are `T5 WATCH`, never

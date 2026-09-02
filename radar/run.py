@@ -50,8 +50,26 @@ SOURCE_MAX_AGE_H = {
 
 
 def _cfg(name):
-    with open(os.path.join(ROOT, "config", name)) as fh:
-        return yaml.safe_load(fh)
+    """Load a config file, falling back to its shipped .example.
+
+    The Bring-Your-Own-Context contract: config/ holds Synphony's thesis and never
+    ships, so a fresh public clone has only config/<name>.example. Falling back to it
+    means a cold clone RUNS — with example values it will obviously want to replace —
+    instead of dying on a missing file it was never given.
+
+    This was a real defect: on 2026-08-29 a cold clone failed a test because
+    _retired_features() read sources.yaml, got FileNotFoundError, swallowed it, and
+    reported nothing as retired. The BYOC half was untested against an actual export.
+    """
+    base = os.path.join(ROOT, "config", name)
+    for path in (base, base + ".example"):
+        if os.path.exists(path):
+            with open(path) as fh:
+                return yaml.safe_load(fh) or {}
+    raise FileNotFoundError(
+        f"config/{name} not found. Copy config/{name}.example to config/{name} "
+        "and edit it — see ONBOARDING.md."
+    )
 
 
 def _publish_health(feature, produced, failures, extra=None):
@@ -244,8 +262,8 @@ def cmd_score():
     exclusions = _cfg("exclusions.yaml")
     rows = load_raw(RAW_YC) + load_raw(os.path.join(ROOT, "data", "raw", "a16z"))
     if not rows:
-        _publish_health("score", 0, 1, {"note": "no raw rows — run ingest first"})
-        print("no raw rows found; run `ingest` first", file=sys.stderr)
+        _publish_health("score", 0, 1, {"note": "no raw rows — run ingest-a16z first"})
+        print("no raw rows found; run `ingest-a16z` (keyless) or `ingest` first", file=sys.stderr)
         return 2
 
     scored = scoring.score_all(rows, rubric, exclusions)

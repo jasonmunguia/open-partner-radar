@@ -12,44 +12,65 @@ Discovery is **news-first by design**. Accelerator directories describe a compan
 enrichment (batch, headcount, founders) and never used as evidence of what a company currently
 does. See ARCHITECTURE.md "v3 — news-first" for why the earlier directory-first build failed.
 
+**Who this is for.** A Synphony teammate — or anyone with their own keys — who wants this exact
+pipeline running for themselves. Bring your own Gmail app password (delivery), your own `claude`
+CLI (the judge), and optionally your own YC access. The configs ship as working files scrubbed
+of three things: the partner list, the do-not-contact list, and commercial terms. The method
+and the thesis are intact, so a cold clone scores real companies into real tiers on the first run.
+
 **Read in this order:** this file (setup, dependencies, failure signatures) →
 `ARCHITECTURE.md` (design + the 11 principles, each traced to a real production failure) →
 `config/*.yaml` (all tunable behaviour). Bringing a **human operator** online: `ONBOARDING.md`.
 
-## First run (a stranger, from a cold clone)
+## First run (a teammate, from a cold clone)
 
 ```
 python3 -m pip install -r requirements.txt
-for f in config/*.yaml.example; do cp "$f" "${f%.example}"; done   # configs are examples; copy them
+for f in config/*.yaml.example; do cp "$f" "${f%.example}"; done   # working configs; run as-is
 cp skill/SKILL.md.example skill/SKILL.md                            # the judge's procedure
 python3 -m pytest tests/ -q                                         # expect: all pass
-python3 -m radar.run news                                           # keyless; needs no account
-python3 -m radar.run score
+python3 -m radar.run ingest-a16z                                    # keyless public API -> data/raw/a16z
+python3 -m radar.run news                                           # keyless RSS/HN -> data/news/queue.jsonl
+python3 -m radar.run score                                          # rubric prefilter over data/raw -> derived/scored.jsonl
+python3 -m radar.run report                                         # tier counts — expect CANDIDATE_* rows, not all T6_PASS
 python3 -m radar.digest --dry                                       # prints HTML, sends nothing
 ```
 
-Nothing above needs an API key or an account. The news lane, the scorer and a dry-run digest
-all work on a bare clone — that is deliberate, so the system is inspectable before anyone
-configures mail or an LLM.
+Nothing above needs an API key or an account. Two things to know about the order: `score`
+reads `data/raw/` (a16z + YC shards), **not** the news queue, so `ingest-a16z` must run before
+it; and `news` feeds the LLM judge (stage 4) and the digest directly, bypassing the scorer.
+Everything past this block — sending mail, the LLM judge — needs the dependencies below.
 
 ## How it runs
 
-launchd fires `run_daily.sh` daily at 06:00 local (plist: `~/Library/LaunchAgents/com.youruser.partner-radar.plist`,
-not in this repo — full contents reproduced in ONBOARDING.md step 6). Four stages:
+launchd fires `run_daily.sh` daily (plist: `~/Library/LaunchAgents/com.youruser.partner-radar.plist`,
+not in this repo — full contents reproduced in ONBOARDING.md step 6). Stages, in the order
+`run_daily.sh` actually runs them:
 
-1. **Ingest** (`python3 -m radar.run ingest`) — YC shards via the `yc` CLI + a16z public API.
-   Skipped when `data/raw/yc/P26.jsonl` is younger than 60h.
-2. **Score** (`python3 -m radar.run score`) — pure keyword prefilter, `config/rubric.yaml` →
-   `data/derived/scored.jsonl`. Always reruns; rubric edits take effect with zero migration.
-3. **Stage-2 rerank** — headless `claude -p` invoking the `partner-radar` skill. Reads
-   candidate websites, assigns final tiers + the `I` score, appends to
-   `data/derived/reranked.jsonl`. Degrades gracefully if `claude` is missing.
-4. **Digest** (`python3 -m radar.digest`) — builds HTML, sends via `mailer.py` SMTP.
+1. **Enrich** (`python3 -m radar.run ingest-a16z`) — a16z/speedrun public API → `data/raw/a16z`.
+   The YC lane (`ingest-yc`) is **retired**: `config/sources.yaml` ships it `enabled: false`
+   because it rode one person's Bookface session (see "The account rule"). Flip it on only
+   with your own `yc` access.
+2. **Discover** (`python3 -m radar.run news`) — keyless RSS (Google News, HN, The Robot Report,
+   IEEE Spectrum) → `data/news/queue.jsonl`. This is the primary lane.
+3. **Score** (`python3 -m radar.run score`) — keyword prefilter over `data/raw/`,
+   `config/rubric.yaml` → `data/derived/scored.jsonl`. Always reruns; rubric edits take
+   effect with zero migration.
+4. **Judge** — headless `claude -p` invoking the `partner-radar` skill over the news queue:
+   reads each article and the company's own site, appends to `data/news/judged.jsonl`, and
+   grows `config/discovered_queries.yaml` so tomorrow's fetch covers what today missed.
+   Skipped with a WARN if `claude` is missing; the digest then ships prefilter rows.
+5. **Leads + signals** (`radar.run leads`, `radar.run signals`) — co-mentioned companies the
+   preset queries never reach, and signal-decay tracking.
+6. **Digest** (`python3 -m radar.digest`) — builds HTML, sends via `tools/mailer.py` (SMTP,
+   Gmail app password from the macOS Keychain).
 
 Manual commands (run from repo root — `python3 -m` needs cwd here):
 
 ```
-python3 -m radar.run ingest     # fetch raw shards, assert yield (exit 2 on shard failure)
+python3 -m radar.run ingest-a16z  # keyless enrichment shards -> data/raw/a16z
+python3 -m radar.run news       # keyless discovery -> data/news/queue.jsonl
+python3 -m radar.run ingest     # both tier-A lanes incl. YC (exit 2 on shard failure)
 python3 -m radar.run score      # rebuild derived/scored.jsonl from raw/
 python3 -m radar.run report     # tier counts + top candidates, stdout only
 python3 -m radar.digest --dry   # print digest HTML, send nothing (works without mailer creds)
@@ -62,11 +83,11 @@ python3 -m radar.digest         # build + send for real
 | Dependency | Where it lives | How to get it | What breaks without it |
 |---|---|---|---|
 | Python 3.11 + PyYAML + certifi | `/Library/Frameworks/Python.framework/Versions/3.11/bin/python3` (falls back to `command -v python3`) | python.org installer, then `python3 -m pip install -r requirements.txt` | Everything. Stock macOS python3 has no CA bundle — `run_daily.sh` exports `SSL_CERT_FILE` from certifi to fix TLS for the a16z fetch and SMTP |
-| `yc` CLI (official YC/Bookface CLI) | `~/.local/bin/yc` | `curl -fsSL https://bookface.ycombinator.com/cli/install.sh \| bash`, then `yc login --device` **as teammate@example.com** (see Account rule) | The YC ingest lane, digest posts (`launches`/`forum`), AND the Exa web sweep — all three ride this one binary |
-| Exa (semantic web search) | No separate install or API key | Comes free through `yc tools run web` — it is a yc CLI tool | `web_semantic` source dies with the same 403 signature as the YC lane. If yc is broken, Exa is broken |
+| `yc` CLI (official YC/Bookface CLI) — **optional, lane retired** | `~/.local/bin/yc` | `curl -fsSL https://bookface.ycombinator.com/cli/install.sh \| bash`, then `yc login --device` **as teammate@example.com** (see Account rule) | Nothing, as shipped: `yc` is `enabled: false`, and the two other things that ride this binary (`launches` posts, the Exa web sweep) fail soft into the digest's "Degraded" footer. Enable only with your own access |
+| Exa (semantic web search) | No separate install or API key | Reached through `yc tools run web` — it is a yc CLI tool, so it lives and dies with the yc lane. There is no `EXA_API_KEY` anywhere in this code | `web_semantic` reports a failure in the digest footer; the news lane covers the same launches through indexed outlets |
 | `claude` CLI (Claude Code) | `~/.local/bin/claude` | https://claude.com/claude-code | Stage-2 rerank skipped; digest sends prefilter candidates unreranked (weaker sort, no angle line) — by design, not a crash |
 | `partner-radar` skill | `skill/SKILL.md.example` in this repo | `cp skill/SKILL.md.example skill/SKILL.md`, fill the four `<<< >>>` thesis blocks, install at `~/.claude/skills/partner-radar/SKILL.md` | The headless rerank prompt says "Use the partner-radar skill"; with no skill the pass has no procedure and produces meaningless tiers |
-| `mailer.py` (SMTP sender) | `~/.claude/tools/mailer.py` | Not in this repo. Registers named accounts with Gmail app passwords in the macOS Keychain: `python3 ~/.claude/tools/mailer.py add <name> <address>` then `... test <name>` | `radar.digest` crashes at `from mailer import send` after building everything. `--dry` works without it |
+| `tools/mailer.py` (SMTP sender) | in this repo | `python3 tools/mailer.py add <name> <address>`, paste a Gmail app password (create one at https://myaccount.google.com/apppasswords — needs 2-step verification on; stored in the macOS Keychain, never a file), then `python3 tools/mailer.py test <name> <recipient>` | `radar.digest` exits at send time naming the exact `add` command to run. `--dry` works without it |
 | launchd plist | `~/Library/LaunchAgents/com.youruser.partner-radar.plist` | Not in this repo — template + install commands in ONBOARDING.md | No schedule; pipeline only runs when invoked by hand |
 
 ## The account rule (do not improvise here)
@@ -122,11 +143,12 @@ The whole signature, each part verifiable in one command:
 Everything here breaks or misroutes for a second operator until changed (walkthrough in
 ONBOARDING.md):
 
-- `config/sources.yaml` → `delivery.to: you@example.com` and `delivery.sender_account:
-  personal` (= munguiaj2017@gmail.com, the only mailer account with a stored Keychain
-  password as of 2026-08-09).
-- `radar/digest.py` → falls back to `youruser@ucla.edu` if `delivery.to` is missing;
-  imports mailer from `~/.claude/tools`.
+- `config/sources.yaml` → `delivery.to` (recipient) and `delivery.sender_account` (the name you
+  registered with `tools/mailer.py add`). As shipped these are the original operator's
+  (`to: you@example.com`, `sender_account: personal` = you.personal@example.com) — change both.
+  Sender and recipient must differ or Gmail buries the thread as a self-send.
+- `radar/digest.py` → exits with the fix named if either delivery key is missing (no silent
+  fallback address); imports mailer from `tools/` in this repo, then `~/.claude/tools`.
 - `run_daily.sh` + plist → absolute paths: framework Python, `~/.local/bin/claude`,
   `/Users/youruser/Desktop/partner-radar`, `/tmp/partner-radar*.log`.
 - Stage-2 rerank files findings to the operator's Obsidian vault (`~/Desktop/the operator OS + Memory`)

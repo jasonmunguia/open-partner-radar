@@ -1,6 +1,6 @@
 """Daily 10am digest: companies + posts, with links, ready for the operator to act on.
 
-Delivery is SMTP with an explicitly named account (principle 6) via ~/.claude/tools/mailer.py.
+Delivery is SMTP with an explicitly named account (principle 6) via tools/mailer.py in this repo.
 No self-send, no GitHub-issue relay — those cost the internship radar six rewrites.
 
 Dedup is on canonical entity identity (principle 5), so a company that appears in YC and
@@ -26,7 +26,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DERIVED = os.path.join(ROOT, "data", "derived")
 SEEN = os.path.join(DERIVED, "digest_seen.json")
 HEALTH = os.path.join(ROOT, "data", "health.json")
+# The mailer ships in-repo (tools/); the operator-level copy is a fallback for old installs.
 sys.path.insert(0, os.path.expanduser("~/.claude/tools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 
 # v4 taxonomy (the operator 2026-08-16). One criterion: is the company's technology INSIDE
 # Synphony's core competency (models, fine-tuning for tasks, deployment) or outside it?
@@ -100,7 +102,9 @@ BOOKFACE_MAX_AGE_H = 48
 
 
 def load_bookface_posts(max_age_h=BOOKFACE_MAX_AGE_H):
-    """Read Bookface posts from raw shards written by scripts/arc_bookface.py.
+    """Read Bookface posts from raw shards written by the operator-local Bookface capture
+    script (scripts/arc_bookface.py in the private tree; it is tied to one browser profile and
+    does not ship in the public edition — this lane is OPTIONAL).
 
     Deliberately a FILE read, not a browser call. The Arc reader needs Arc running
     with a debug port and Bookface open; the digest runs from cron at 7am when that
@@ -113,7 +117,9 @@ def load_bookface_posts(max_age_h=BOOKFACE_MAX_AGE_H):
     """
     posts, errors = [], []
     if not os.path.isdir(BOOKFACE_RAW):
-        return posts, ["bookface: no raw shards yet — run scripts/arc_bookface.py"]
+        # Never configured, not broken: an optional lane that was never set up must not paint
+        # a healthy install red (the 2026-09-01 cold-clone audit saw exactly that).
+        return posts, []
 
     now = time.time()
     for fname in sorted(os.listdir(BOOKFACE_RAW)):
@@ -123,7 +129,7 @@ def load_bookface_posts(max_age_h=BOOKFACE_MAX_AGE_H):
         age_h = (now - os.path.getmtime(path)) / 3600.0
         if age_h > max_age_h:
             errors.append(f"bookface/{fname[:-6]}: stale, {int(age_h)}h old "
-                          f"(limit {max_age_h}h) — rerun scripts/arc_bookface.py")
+                          f"(limit {max_age_h}h) — refresh the Bookface capture")
             continue
         posts.extend(_load_jsonl(path))
     return posts, errors
@@ -503,8 +509,14 @@ def main():
         subject = f"{warn}Partner Radar — {len(new_companies)} companies, {len(new_posts)} posts"
     else:
         subject = f"{warn}Partner Radar — quiet day"
-    send(delivery.get("sender_account", "synphony"),
-         delivery.get("to", "youruser@ucla.edu"), subject, html)
+    sender, to = delivery.get("sender_account"), delivery.get("to")
+    if not (sender and to):
+        # Loud, not a silent fallback to a hardcoded address: a missing delivery block used to
+        # mail the author's placeholder inbox and report success.
+        raise SystemExit("config/sources.yaml has no delivery.sender_account / delivery.to — "
+                         "register a sender with `python3 tools/mailer.py add <name> <address>` "
+                         "and set both keys (README: Operator coupling)")
+    send(sender, to, subject, html)
 
     seen["last_sent"] = int(time.time())
     os.makedirs(DERIVED, exist_ok=True)

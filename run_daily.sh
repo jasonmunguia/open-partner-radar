@@ -88,7 +88,54 @@ fi
 log "harvesting leads…"
 "$PY" -m radar.run leads || log "WARN leads returned $?"
 
+# --- 3c. Bookface founder posts (needs Arc awake; degrade, never fail the run) -------------
+# Wired in 2026-08-29. Built and hand-verified on 08-16 but never added here, so the shard went
+# 308h stale and the digest flagged one failure every run for twelve days. A capability that
+# only runs when someone types it is not wired in.
+log "reading bookface via Arc…"
+"$PY" scripts/arc_bookface.py --feed launch_bookface --feed recruiting --out data/raw/bookface \
+  || log "WARN bookface returned $? (Arc closed or debug port down — digest degrades this lane only)"
+
+# --- 3d. Classify news into decayed signals -----------------------------------------------
+# Same omission as above: signals ran three times by hand on 08-16 then sat STALE for 306h.
+log "classifying signals…"
+"$PY" -m radar.run signals || log "WARN signals returned $?"
+
 # --- 4. Build and send the digest ---------------------------------------------------------
 log "sending digest…"
 "$PY" -m radar.digest || log "WARN digest returned $?"
+
+# --- 5. Mirror production state to the private repo ---------------------------------------
+# This machine IS production; GitHub is the backup. Without this step the two drift silently:
+# on 2026-08-17 the entire news lane had been running for a day while radar/news.py was still
+# untracked, and the only symptom was a stale timestamp nobody was looking at.
+#
+# Deliberately narrow. Principle 7 says git is not the database, and internship-radar showed
+# what ignoring that costs — ~20 of 50 commits there are timestamped state churn that buries
+# the real history. So this commits the accumulated judgements and raw shards (expensive to
+# regenerate, genuinely lost if the disk dies) and leaves derived/ alone, which is disposable
+# by design and rebuilt from raw on every run.
+#
+# Never fails the run. A push problem is a backup problem, not a pipeline problem, and the
+# email has already gone out by this point.
+log "syncing state to private repo…"
+git add -A radar config scripts tests skill \
+        data/raw data/news/judged.jsonl data/news/leads.jsonl \
+        data/derived/reranked.jsonl ./*.md ./*.sh 2>/dev/null
+
+if git diff --cached --quiet 2>/dev/null; then
+  log "  nothing to sync"
+else
+  CHANGED=$(git diff --cached --name-only | wc -l | tr -d ' ')
+  JUDGED=$(wc -l < data/news/judged.jsonl 2>/dev/null | tr -d ' ' || echo 0)
+  if git commit -q -m "state $(date '+%Y-%m-%d'): ${CHANGED} files, ${JUDGED} judged rows" 2>/dev/null; then
+    if git push -q origin HEAD 2>/dev/null; then
+      log "  synced ${CHANGED} files"
+    else
+      log "  WARN commit ok, push failed — local is ahead, will retry tomorrow"
+    fi
+  else
+    log "  WARN commit failed"
+  fi
+fi
 log "done"

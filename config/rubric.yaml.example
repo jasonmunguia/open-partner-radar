@@ -1,20 +1,233 @@
-# EXAMPLE ONLY — replace with your own before running.
+# WORKING CONFIG — the real file, scrubbed. Copy to config/rubric.yaml and it runs as-is.
 #
-# This file is the CONTEXT half of the Bring-Your-Own-Context split: the method in
-# radar/ works for anyone, but what counts as a good partner is yours to define.
-# Copy to config/rubric.yaml and edit.
+# What was removed: partner names, do-not-contact names, and commercial terms
+# (replaced by "Example Partner X" / "[deal price]"). The method and the thesis are intact.
+# This is the CONTEXT half of the Bring-Your-Own-Context split; edit it to your own lens.
 #
-# The scoring thesis. Weights encode what YOUR business needs from a partner.
-# The shipped Synphony rubric ranks by time-to-deployment; yours will differ.
-objective: "one sentence naming the outcome you rank by"
+# Synphony lens — STAGE 1 of 2. Recall-oriented prefilter, not final judgment.
+#
+# v3, rewritten 2026-07-29 around the DEPLOYMENT SPEED OBJECTIVE after the operator corrected the
+# model. Ranking rule, verbatim: "rank by potential to be the best for us to deploy."
+# The question is never "is this good tech" — it is "which specific blocker on the path to a
+# live deployment does this remove?"
+#
+# What changed from v2 and why:
+#   - S (generic "supply fit") replaced by A (deployment accelerant), grouped by BLOCKER
+#     REMOVED rather than technology category.
+#   - Generic datasets DEMOTED to a penalty. the operator: "we are not looking to buy data like that
+#     unless it's very, very cheap." Workplace-generic / egocentric-human data does not
+#     transfer to two-connector insertion or meat trimming. v2 ranked Cortex AI #1 — wrong.
+#   - New H axis for the cheap/free hardware play (optics + humanoid-maker bait), gated on
+#     effective cost <= ~$25K where free beats list price.
+#
+# Precision still belongs to stage 2 (the headless claude pass — run_daily.sh step 3; there
+# is no radar/rerank.py). A keyword rubric structurally cannot
+# separate "sells me a component" from "competes for my customer" — both say robot, arm,
+# factory, automation. Stage 1 casts wide; stage 2 reads and decides.
 
 axes:
-  A:
-    label: "accelerant — which blocker does this remove?"
-    weight: 1.0
-  H:
-    label: "hardware fit"
-    weight: 1.0
 
-penalties:
-  generic_dataset: -2
+  # A — Deployment accelerant. Groups are ordered by how directly they unblock a deployment.
+  A:
+    cap: 100
+    groups:
+      uptime_intervention:               # HIGHEST: makes an unreliable policy shippable TODAY
+        weight: 34                       # exemplar: Avea Robotics (P26) — 100% uptime, instant
+        terms: [human-in-the-loop, human in the loop, remote operation, remote operator,
+                remote intervention, teleoperation, teleop, failure recovery, uptime,
+                intervene, takeover, take over, remote control, supervised autonomy,
+                fallback operator]
+      task_policy:                       # a trained policy that drops into one of our tasks
+        weight: 30
+        terms: [manipulation policy, robot policy, trained policy, policy learning,
+                imitation learning, behavior cloning, vision-language-action,
+                vision language action, vla, robot foundation model, dexterous manipulation,
+                grasping policy, insertion, assembly policy, bin picking, deformable]
+      integration_compression:           # plant integration time is on the critical path
+        weight: 28                       # exemplar: Neuron Industries — "weeks to hours"
+        terms: [industrial controller, plc, controls project, integration in hours,
+                deploy in hours, no retrofitting, plug and play, rapid deployment,
+                deployment-ready, drop-in, commissioning, retrofit]
+      data_capture_tooling:              # lets US collect task-specific data cheaply
+        weight: 26                       # exemplar: Origami Robotics — matched device + hand
+        terms: [data collection device, collection rig, universal manipulation interface,
+                umi, handheld gripper, embodiment gap, demonstration collection,
+                teleop rig, data collection hardware, in the wild data]
+      delicate_manipulation:             # gates strawberries + weak-object tasks
+        weight: 26
+        terms: [tactile, tactile sensing, force torque, force-torque, force control,
+                compliant, compliance control, delicate, fragile, soft gripper,
+                variable stiffness, slip detection, proprioception]
+      stack_middleware:                  # the "tack on together" layer
+        weight: 22                       # exemplars: 6thSense, Waddle Labs, Cerulion
+        terms: [robot operating system, ros, ros2, ros 2, robot middleware, robot os,
+                agents for robotics, robotics control, control layer, nervous system,
+                robot infrastructure, orchestration for robots, fleet management,
+                motion planning, trajectory]
+      perception_stack:
+        weight: 20
+        terms: [3d vision, machine vision, depth camera, point cloud, pose estimation,
+                6dof, 6-dof, object detection, hyperspectral, x-ray inspection,
+                grasp detection, spatial intelligence, defect detection]
+      data_services:                     # turnkey collection contractors — route 3
+        weight: 20                       # exemplar: Datoric (S26)
+        terms: [custom training data, data collection service, contributor recruitment,
+                rights management, data labeling, annotation service, managed collection]
+      sim_and_eval:                      # shortens the loop before a deployment
+        weight: 18
+        terms: [sim2real, sim-to-real, robotics simulation, rl environment, rl environments,
+                robot evals, world model, digital twin, hardware simulation,
+                firmware simulation, benchmark]
+      generic_data_penalty:              # DEMOTION, not a bonus
+        weight: -22                      # "not looking to buy data like that unless very cheap"
+        terms: [large-scale dataset, egocentric dataset, internet-scale data,
+                data marketplace, data broker, training data at scale,
+                diverse dataset, web-scale]
+
+  # H — Hardware play. Cheap or free deployable robots: optics + humanoid-maker bait.
+  # Effective cost to us <= ~$25K, free beats list. Cost signals are keyword proxies here;
+  # stage 2 confirms actual pricing.
+  H:
+    cap: 100
+    groups:
+      deployable_hardware:
+        weight: 34
+        terms: [humanoid, humanoids, robot arm, robotic arm, mobile manipulator,
+                robotic hand, dexterous hand, robotic platform, dev kit, development kit,
+                robotic cell, workcell, direct drive, quadruped]
+      cost_signals:
+        weight: 34
+        terms: [low-cost, low cost, affordable, cheap, inexpensive, budget,
+                open-source hardware, open source hardware, no upfront, priced by,
+                pay per, fraction of the cost, order of magnitude cheaper]
+      optics_value:
+        weight: 20
+        terms: [pilot program, design partner, design partners, early access,
+                deployed with, first deployment, reference customer]
+
+  # D — Demand fit. Do they RUN physical operations we could sell a cell into?
+  D:
+    cap: 100
+    groups:
+      tag_signals:
+        weight: 24
+        terms: [manufacturing, industrial, supply chain, logistics, agriculture, food,
+                warehouse, construction]
+      manufacturing_ops:
+        weight: 26
+        terms: [contract manufacturing, contract manufacturer,
+                electronics manufacturing services, pcb assembly, machine shop, cnc,
+                injection molding, sheet metal, wire harness, connector assembly,
+                microfactory, micro-factory, factory, factories, production line,
+                assembly line, fabrication]
+      food_ops:
+        weight: 26
+        terms: [meat processing, poultry, pork, protein processing, food processing,
+                produce packing, co-packer, copacker, food manufacturing, deboning,
+                trimming, slaughter]
+      logistics_ops:
+        weight: 20
+        terms: [fulfillment, fulfilment, third-party logistics, 3pl, warehouse, warehouses,
+                put wall, sortation, pick and pack, palletizing, depalletizing]
+      circular_ops:
+        weight: 18
+        terms: [e-waste, electronic waste, recycling, disassembly, teardown,
+                refurbishment, reverse logistics]
+
+  # C — Channel fit. Already sells into plant floors. Lowest priority of the four.
+  C:
+    cap: 100
+    groups:
+      plant_software:
+        weight: 26
+        terms: [manufacturing execution, mes, erp, quality management, qms, cmms,
+                maintenance management, oee, plant floor, shop floor, industrial iot,
+                iiot, scada, historian, downtime]
+      supply_chain:
+        weight: 16
+        terms: [warehouse management, wms, supply chain execution, production scheduling,
+                inventory optimization, procurement, demand planning]
+      integrators:
+        weight: 22
+        terms: [system integrator, systems integrator, automation integrator, turnkey,
+                industrial distributor, field service, installer]
+
+  # I — Internalizability. HIGH = cheap to rebuild and drop later. LOW = real moat, so
+  # partner properly or pool (the Example Partner A conclusion).
+  # NOTE: this axis is weak by nature — a one-liner rarely reveals whether a moat is real
+  # data or a thin wrapper. v2 returned the base value for nearly every company. STAGE 2
+  # OWNS THIS SCORE; what follows is only a prior.
+  I:
+    cap: 100
+    base: 45
+    groups:
+      easy_signals:
+        weight: 14
+        terms: [api for, wrapper, built on top of, no-code, low-code, dashboard,
+                orchestration layer, integrates with, powered by openai,
+                powered by anthropic, fine-tune, fine-tuning, off-the-shelf, thin layer,
+                saas platform]
+      hard_signals:
+        weight: -18
+        terms: [our own foundation model, trained from scratch, proprietary dataset,
+                proprietary data, custom silicon, asic, we manufacture, in-house fab,
+                patented, patent, novel hardware, new material, wafer, cleanroom,
+                years of research, phd, first principles, vertically integrated,
+                direct drive, we designed]
+
+# L — Leverage asymmetry. Computed. Small team + recent batch + active = they need a
+# deployed logo more than we need them. The condition that produced Example Partner C at [deal price]
+# against a [list price], papered hardware-only with no licensing language.
+leverage:
+  team_size_full_points: 10
+  team_size_zero_points: 60
+  recent_batches: [W27, F26, S26, P26, W26, F25, S25]
+  recency_bonus: 25
+  inactive_penalty: 40
+
+# Competitor gate. Stage 1 only RAISES SUSPICION (>=1 deployment phrase AND >=1 setting
+# phrase). Stage 2 makes the call, because a component vendor and a competitor have nearly
+# identical keyword signatures. Origami Robotics is the live example of why.
+competitor:
+  deployment_terms: [robots as a service, raas, deploy robots, deploying robots,
+                     robotic automation for, automate factories, automate warehouses,
+                     labor automation, robotic labor, replace manual labor,
+                     replace human labor, general purpose robot, general-purpose robot,
+                     turnkey automation, autonomous manufacturing, physical ai for,
+                     automation solutions, automate physical]
+  setting_terms: [factory, factories, warehouse, warehouses, manufacturing plant,
+                  production line, industrial, plant floor, fulfillment, food plant]
+
+# Stage-1 tiering — deliberately LOW thresholds; this is a recall gate.
+# Ordered by the operator's priority: accelerants first, then hardware, then customers, then channel.
+tiers:
+  - tier: CANDIDATE_ACCELERANT
+    when: "A >= 20"
+  - tier: CANDIDATE_HARDWARE
+    when: "H >= 30"
+  - tier: CANDIDATE_CUSTOMER
+    when: "D >= 30"
+  - tier: CANDIDATE_CHANNEL
+    when: "C >= 30"
+  - tier: T6_PASS
+    when: always
+
+# THIN-DESCRIPTION GUARD — the most important rule in this file.
+#
+# Keyword scoring structurally punishes companies that haven't written their Bookface page
+# yet, and those are exactly the newest, smallest, highest-leverage targets. Observed
+# 2026-07-29: Aktoria Robotics' entire description is "Operate any robot, anywhere in the
+# world" (scored A0); 6thSense and Waddle Labs have NO long description at all. All three are
+# on the operator's own named shortlist, and all three fell to T6_PASS on text volume alone.
+#
+# Absence of evidence is not evidence of absence. A company with too little text to score,
+# but a relevant tag, is routed to stage 2 for a web lookup rather than discarded.
+thin_description:
+  max_chars: 200                # combined one_liner + long_description below this = "thin"
+  tier: CANDIDATE_UNKNOWN
+  require_any_tag: [robotics, hardware, hard tech, robots, manufacturing, industrial,
+                    automation, drones, machine learning, reinforcement learning,
+                    computer vision, supply chain, logistics, semiconductors, agriculture]
+
+stage2_queue: [CANDIDATE_ACCELERANT, CANDIDATE_HARDWARE, CANDIDATE_CUSTOMER,
+               CANDIDATE_CHANNEL, CANDIDATE_UNKNOWN]

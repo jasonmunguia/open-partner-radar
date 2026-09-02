@@ -4,3 +4,4 @@
 # See README.md "Dependencies" for where each one comes from.
 PyYAML>=6.0
 certifi>=2024.2.2   # stock macOS python3 ships no CA bundle; run_daily.sh exports SSL_CERT_FILE from this
+pytest>=8.0         # the README first-run block runs the suite; a cold clone must be able to

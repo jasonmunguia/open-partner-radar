@@ -1,18 +1,97 @@
-# EXAMPLE ONLY — replace with your own before running.
+# WORKING CONFIG — the real file, scrubbed. Copy to config/sources.yaml and it runs as-is.
 #
-# This file is the CONTEXT half of the Bring-Your-Own-Context split: the method in
-# radar/ works for anyone, but what counts as a good partner is yours to define.
-# Copy to config/sources.yaml and edit.
+# What was removed: partner names, do-not-contact names, and commercial terms
+# (replaced by "Example Partner X" / "[deal price]"). The method and the thesis are intact.
+# This is the CONTEXT half of the Bring-Your-Own-Context split; edit it to your own lens.
 #
-tier_a:
-  - name: yc
-    enabled: false          # needs your own YC/Bookface access
-    cadence_hours: 60
-    batches: [W26, S26]
-  - name: a16z_speedrun
-    enabled: true           # public API, no auth
-    cadence_hours: 60
+# Per-source cadence. Tier A universes only change when a batch drops (4x/year);
+# Tier B sources publish launches any day. The scheduler reads poll_every_hours —
+# there is no global schedule.
 
-tier_b:
+tier_a:                       # batch/cohort sources
+  - name: yc
+    adapter: ycfetch
+    poll_every_hours: 60      # ~2.5 days
+    # RETIRED 2026-08-15 by the operator ("you can forget the yc from the account holder thing").
+    #
+    # The CLI authenticates as the authorized account holder; that token broke ~2026-08-08 and only he can
+    # refresh it via device flow. A lane that needs another person's session to stay alive
+    # is a lane that will keep dying, so the radar drops it from the critical path.
+    # Nothing else depends on it: news discovery is keyless by design and a16z enrichment
+    # needs no auth. The 725 rows already in data/raw/yc/ keep scoring — they are frozen,
+    # not deleted, and the dossier built from them stands.
+    #
+    # To revive: `yc login --device` as teammate@example.com, confirm `yc me` returns the account holder,
+    # flip this to true, then `python3 -m radar.run ingest-yc`.
+    enabled: false
+    # NINE-MONTH WINDOW (set by the operator 2026-07-30). Only batches younger than ~9 months.
+    # Cutoff from 2026-07-30 is 2025-10-30, so: F25 (Fall 2025, straddles the cutoff and
+    # ends inside it — kept), W26, P26, S26, F26, W27. S25 and older are excluded.
+    # Rationale is leverage, not novelty: past roughly this age a company has a legal
+    # function, real MSAs with anti-reverse-engineering terms, and no shortage of
+    # design-partner logos — so the terms Synphony got from Example Partner C stop being available.
+    # Ordered newest-first so a partial run still yields the most relevant shards.
+    # Counts are ground truth from group_counts_by:batch; the yield assertion re-probes live.
+    batches: [W27, F26, S26, P26, W26, F25]
+    expected_total: 720
+
+  - name: a16z_speedrun
+    adapter: sources_ext.fetch_a16z
+    poll_every_hours: 60
+    enabled: true
+    # Public API, no auth: https://speedrun-talent-network.com/api/v1/companies
+    # 879 companies (a16z 280 / speedrun 36 / market 563). Only the 43 speedrun-cohort
+    # records carry a date, so the 9-month rule applies exactly to SR006/SR007; undated
+    # portfolio and market records are kept only when their industry is relevant and are
+    # flagged age_unknown for the rerank to date-check.
+    recent_cohorts: [SR006, SR007]
+    relevant_industries: [American Dynamism, Deep Tech, Infra, AI]
+
+tier_b:                       # continuous discovery — runs daily
+  - name: x_semantic
+    adapter: sources_ext.fetch_x_signals
+    poll_every_hours: 24
+    enabled: false
+    lookback_days: 14
+    # DISABLED 2026-07-30 — Exa cannot see X. Domain-restricted search on x.com/twitter.com
+    # returns 0 results with 0 errors (X blocks crawlers), and Exa's documented
+    # `category: "tweet"` now 422s with "no longer supported".
+    # Mitigation: web_semantic below catches the same launches and pivots through outlets
+    # that do get indexed — it found Mimic Robotics' M1 Hand (1 day old) and Kailong High
+    # Tech's pivot from emission control to embodied AI within a 21-day window.
+    # If X-native coverage is genuinely required, the path is the arc-browser skill against
+    # the operator's logged-in X session, or the paid X API — not Exa.
+
   - name: web_semantic
-    enabled: true           # needs EXA_API_KEY in your environment
+    adapter: sources_ext.fetch_web_signals
+    poll_every_hours: 24
+    # Rides the yc CLI (Exa is reached through `yc tools run web`), so it lives and dies with
+    # the retired yc lane above: without yc access every call fails soft into the digest's
+    # degraded footer. Set false if you have no yc login; the news lane covers the same launches.
+    enabled: true
+    lookback_days: 14
+
+  - name: launch_yc_public
+    adapter: yc_launches      # yc search entity=launches, handled inline in digest.py
+    poll_every_hours: 24
+    enabled: true
+
+delivery:
+  # Principle 6: decided on day one. SMTP with an explicitly named sender.
+  # Never self-send-to-self (Gmail buries it) and never rely on self-created
+  # GitHub issues for notification (GitHub does not email you for your own).
+  transport: smtp_named_account
+  # `personal` is the only account with a Keychain app password as of 2026-07-29.
+  # To send as Synphony instead (this IS Synphony business work), run:
+  #   python3 ~/.claude/tools/mailer.py add synphony you@example.com
+  # then change sender_account to `synphony`. Sender and recipient differ either way, so
+  # Gmail never buries it as a self-send — the failure that cost internship-radar two rewrites.
+  sender_account: personal        # you.personal@example.com — the account with a Keychain password
+  to: you@example.com          # set by the operator 2026-07-30
+  digest_hour_local: 7
+  suppress_empty_digest: true   # an empty scheduled email trains you to ignore it
+  instant_alert_tiers: [T1_PARTNER_NOW]
+
+retention:
+  raw_days: 400        # raw shards are the source of truth; keep >1 year of batches
+  derived_days: 120    # derived/ is disposable, rebuilt from raw on every run

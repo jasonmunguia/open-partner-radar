@@ -16,12 +16,10 @@ footer at the bottom means something broke — that footer is their dashboard.
 2. **Which mailbox sends it?** Needs a Gmail/Workspace **app password** — they create it at
    https://myaccount.google.com/apppasswords (requires 2-step verification on). Sender and
    recipient must differ, or Gmail buries the thread as self-send.
-3. **The yc CLI stays authenticated as the authorized account holder (teammate@example.com).** This is policy,
-   not a default — see README "The account rule". A new operator does NOT log in as
-   themselves: their Bookface account may lack `tools run` access entirely (the 403 incident
-   of 2026-08-09 was exactly this), and every query lands on the authenticated account's
-   activity trail. If the account holder must approve a re-login, that is a human step: he runs
-   `yc login --device` on this machine and follows the browser prompt. Budget 5 minutes for it.
+3. **Do they have YC/Bookface access of their own? (optional)** The YC lane ships
+   `enabled: false` — it was retired because it rode one person's session (README "The
+   account rule"). Without it nothing is lost; the news lane is primary. If they do have
+   access and want the lane, step 2 applies; otherwise skip step 2 entirely.
 
 ## Steps
 
@@ -36,7 +34,10 @@ python3 -c "import yaml, certifi; print('deps ok')"
 
 Checkpoint (them): you tell them "dependencies verified" only after `deps ok` printed.
 
-### 2. Install and verify the yc CLI (5–10 min)
+### 2. (Optional) Install and verify the yc CLI — only if #3 above was yes (5–10 min)
+
+Skip this step and leave `yc: enabled: false` in `config/sources.yaml` unless they have
+their own Bookface login with `tools run` access.
 
 ```
 curl -fsSL https://bookface.ycombinator.com/cli/install.sh | bash
@@ -61,8 +62,8 @@ Checkpoint (them): read them the batch counts ("YC sees 248 companies in S26..."
 Register their sender mailbox (name it after the person or org, not "personal"):
 
 ```
-python3 ~/.claude/tools/mailer.py add <name> <sender-address>   # prompts for app password
-python3 ~/.claude/tools/mailer.py test <name> <their-recipient-address>
+python3 tools/mailer.py add <name> <sender-address>   # prompts for the Gmail app password
+python3 tools/mailer.py test <name> <their-recipient-address>
 ```
 
 Checkpoint (them): a "Mailer test" email lands in their inbox. Do not proceed until it does.
@@ -73,7 +74,8 @@ registered and `to:` to their recipient address.
 ### 4. Dry run — prove the pipeline end-to-end without sending (5 min)
 
 ```
-python3 -m radar.run score && python3 -m radar.run report
+python3 -m radar.run ingest-a16z && python3 -m radar.run news     # both keyless
+python3 -m radar.run score && python3 -m radar.run report         # expect CANDIDATE_* tiers, not all T6_PASS
 python3 -m radar.digest --dry > /tmp/digest-preview.html
 open /tmp/digest-preview.html
 ```
