@@ -45,6 +45,7 @@ SOURCE_MAX_AGE_H = {
     "news_fetch": 36,
     "digest": 36,
     "signals": 36,
+    "judge": 36,        # the headless claude pass; published from run_daily.sh step 3
     "leads": 36,
 }
 

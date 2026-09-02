@@ -65,15 +65,28 @@ log "scoring…"
 # to what the pass actually needs rather than bypassing permissions wholesale.
 if [ -x "$CLAUDE" ]; then
   log "reranking via claude…"
+  # One log per day, kept: the single overwritten file meant a failed judge left no evidence
+  # by the time anyone asked why the digest was empty.
+  RERANK_LOG="/tmp/partner-radar-rerank-$(date +%Y-%m-%d).log"
+  JUDGED_BEFORE=0
+  [ -f data/news/judged.jsonl ] && JUDGED_BEFORE=$(wc -l < data/news/judged.jsonl | tr -d ' ')
   "$CLAUDE" -p "Use the partner-radar skill and run its Workflow steps 2-6 on today's news. Read data/news/queue.jsonl. Triage every item on title+summary, keeping only those where a specific company did a specific thing touching the thesis; expect to keep 10-20 percent. For each survivor, fetch the article AND the company's own website, then append one record to data/news/judged.jsonl with: company, company_url (their site), source_url, source_publisher, source_title, published, what_happened, why_it_matters (naming the specific Synphony task or bottleneck), tier (v4: PARTNER / ABSORB / WATCH / INTEL / PASS — the single criterion is whether the company's technology sits INSIDE Synphony's specialty of models, fine-tuning and deployment, in which case ABSORB, or OUTSIDE it like arms, sensors, tactile, teleop and services, in which case PARTNER), I (set ONLY on ABSORB rows; meaningless where we will never build it), validation_question, companies_mentioned (an array of any OTHER company names the article names - comparables, competitors, investors' other bets; this is how we find companies our preset queries never reach, and it is free because you have already read the article), and known (true if already in data/derived/reranked.jsonl, in which case why_it_matters must describe what CHANGED). Drop anything where you cannot name a specific Synphony bottleneck. Cap at 25 deep reads. THEN do three search steps, in this order. (A) LEAD RESEARCH: read data/news/leads.jsonl for co-mentioned companies not yet judged; for each, WebSearch the company, fetch its own site, and judge it into judged.jsonl using the same schema. These are companies our preset queries never reach. (B) GAP SEARCH: pick 2-3 thesis areas today's headlines did NOT cover (robot hands, teleoperation, tactile sensing, cheap humanoids, manipulation policies, deployment competitors) and run live WebSearches on them now; judge anything real that surfaces. (C) COVERAGE CRITIC: compare today's headlines against config/discovered_queries.yaml plus the preset list in radar/news.py, name any category or GEOGRAPHY absent entirely, and append 1-3 new queries to config/discovered_queries.yaml so tomorrow's deterministic fetch covers it permanently. Do not duplicate an existing query. Then file anything durable to the wiki dossier and log. Work autonomously; do not ask questions." \
       --allowedTools "Read,Write,Edit,Bash,WebFetch,WebSearch" \
-      >/tmp/partner-radar-rerank.log 2>&1 \
-    || log "WARN rerank exited $? (see /tmp/partner-radar-rerank.log)"
+      >"$RERANK_LOG" 2>&1
+  JUDGE_RC=$?
+  cp "$RERANK_LOG" /tmp/partner-radar-rerank.log      # stable name for the README's diagnosis path
+  [ "$JUDGE_RC" -eq 0 ] || log "WARN rerank exited $JUDGE_RC (see $RERANK_LOG)"
   # Measure the file the judge actually writes. This previously reported
   # data/derived/reranked.jsonl — the OLD directory-rerank output — so the log showed
   # "141 rows" every night while the news judge's real output went uncounted.
-  [ -f data/news/judged.jsonl ] && \
-    log "judged news rows: $(wc -l < data/news/judged.jsonl | tr -d ' ')"
+  JUDGED_AFTER=0
+  [ -f data/news/judged.jsonl ] && JUDGED_AFTER=$(wc -l < data/news/judged.jsonl | tr -d ' ')
+  log "judged news rows: $JUDGED_AFTER (+$((JUDGED_AFTER - JUDGED_BEFORE)) this run)"
+  # Publish the judge as a health lane. Before 2026-09-02 a dead judge produced a WARN in
+  # this log and nothing else: the digest went out saying "nothing new" with a clean health
+  # box, twice in one week, and the only evidence was overwritten by the next night's run.
+  "$PY" -c "from radar.run import _publish_health; _publish_health('judge', $((JUDGED_AFTER - JUDGED_BEFORE)), $([ "$JUDGE_RC" -eq 0 ] && echo 0 || echo 1), {'exit': $JUDGE_RC, 'log': '$RERANK_LOG'})" \
+    || log "WARN could not publish judge health"
 else
   log "WARN claude binary not found — sending prefilter candidates unreranked"
 fi

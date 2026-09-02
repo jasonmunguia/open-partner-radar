@@ -86,17 +86,29 @@ with a low `I`.
 contacted. Confusing "sells me a component" with "competes for my customer" is the single
 most expensive classification error available here.
 
-### Tiers
+### Tiers — v4 (set by the operator 2026-08-16)
 
-| Tier | Meaning | Rule of thumb |
+**One criterion decides PARTNER vs ABSORB — is the company's technology inside or outside
+Synphony's core competency (models, fine-tuning them for tasks, deployment)?**
+
+| Tier | Rule | Action |
 |---|---|---|
-| `T1_PARTNER_NOW` | High `S`, high `L`, buy/partner immediately | component or model we need, favorable terms available |
-| `T2_ABSORB_TRACK` | High `S`, high `I` | partner, deploy, internalize on a 2–3 quarter clock |
-| `T3_CUSTOMER` | High `D` | route to the Synphony ICP pipeline |
-| `T4_CHANNEL` | High `C` | borrowed distribution |
-| `T5_WATCH` | Competitor | monitor, never contact |
-| `T6_PASS` | — | no fit |
-| `T0_EXISTING` | Already a partner/relationship | suppressed from alerts, never re-surfaced |
+| `PARTNER` | **Outside** the specialty — arms, actuators, tactile/force sensors, capture rigs, teleop and remote-intervention infra, controls integration, human-labour services | Buy it and keep buying. Never build |
+| `ABSORB` | **Inside** the specialty — models, policies, fine-tuning, the eval/reliability layer that trains them | Integrate → deploy → reverse-engineer → drop the rev-share |
+| `WATCH` | Competitors — anyone deploying robots into industrial settings as their own product | Monitor for intel. **Never contact** |
+| `INTEL` | General industry intel — substrate shifts, regulation, funding patterns, plant-floor software | Read it. No action |
+| `EXISTING` | Already a partner/relationship | Suppressed from the email, never re-surfaced |
+| `PASS` | No fit | — |
+
+`I` (internalizability, 0–100) is set on `ABSORB` rows only: for a PARTNER you are never
+building it, so the score is noise. Customers are out of scope here — they belong in the
+lead-gen pipeline. The hardware cost rule still applies inside PARTNER: deployable hardware
+is interesting at an effective cost ≤ ~$25K, and free beats list.
+
+**Retired (v3, do not reintroduce):** `T1_PARTNER_NOW` / `T2_ABSORB_TRACK` conflated
+urgency with disposability — across 141 rows their mean `I` was 46 vs 49, so the split was
+not capturing absorption at all. `T3_CUSTOMER`/`T4_CHANNEL` moved to lead-gen. The stage-1
+keyword prefilter still emits `CANDIDATE_*` tiers; the judge (stage 4) assigns the v4 tier.
 
 ## Exclusions
 
