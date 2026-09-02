@@ -18,6 +18,30 @@ CLI (the judge), and optionally your own YC access. The configs ship as working 
 of three things: the partner list, the do-not-contact list, and commercial terms. The method
 and the thesis are intact, so a cold clone scores real companies into real tiers on the first run.
 
+## What the email looks like
+
+One email a morning. Every finding sits under one of four headed sections, and the split is a
+single question — **is this company's technology inside or outside our core competency
+(models, fine-tuning them for tasks, deployment)?**
+
+| Section | What lands here | What we do |
+|---|---|---|
+| **PARTNER** | Outside — arms, actuators, tactile sensors, capture rigs, teleop / remote intervention, controls integration | Buy it and keep buying. Never build. The hardware-cost rule lives here: deployable hardware at ≤ ~$25K effective cost, free beats list |
+| **ABSORB** | Inside — models, policies, fine-tuning, the eval layer | Integrate → deploy → reverse-engineer → drop the rev-share. `I` scores how hard the rebuild is |
+| **WATCH** | Competitors deploying robots into industrial settings as their own product | Intel only. Never contact |
+| **INTEL** | Market updates — substrate shifts, regulation, funding patterns, plant-floor software | Read it. No action |
+
+Above the sections: **What changed** (entities ranked by decayed signal heat) and **New to the
+radar** (events about companies the radar has never seen). Below them: posts, and a standing
+shortlist so the thread stays warm on a quiet day. Screenshots below are rendered from the real
+template with invented companies.
+
+![Signals, new-to-radar, and the PARTNER / ABSORB sections](docs/digest-partners.png)
+
+![WATCH and INTEL — competitor and market sections, plus posts](docs/digest-market.png)
+
+![The standing shortlist — one card per company with angle and validation question](docs/digest-standing.png)
+
 **Read in this order:** this file (setup, dependencies, failure signatures) →
 `ARCHITECTURE.md` (design + the 11 principles, each traced to a real production failure) →
 `config/*.yaml` (all tunable behaviour). Bringing a **human operator** online: `ONBOARDING.md`.

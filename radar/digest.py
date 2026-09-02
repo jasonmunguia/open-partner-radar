@@ -45,6 +45,19 @@ TIER_LABEL = {
     "CANDIDATE_HARDWARE": ("Cheap/free hardware", "#8a5a00"),
     "CANDIDATE_UNKNOWN": ("Needs a look — thin public info", "#6b6b6b"),
 }
+# One line under each section heading: the rule that put a company there and what to do
+# about it. The v4 split (2026-08-16) is one criterion — inside or outside the core
+# competency — and the email should teach it on every read, not assume it.
+SECTION_INTRO = {
+    "PARTNER": ("Outside the specialty — arms, actuators, tactile sensors, capture rigs, "
+                "teleop and remote intervention, controls integration. Buy it and keep buying; never build."),
+    "ABSORB": ("Inside the specialty — models, policies, fine-tuning, the eval layer. "
+               "Integrate → deploy → reverse-engineer → drop the rev-share. I = how hard the rebuild is."),
+    "WATCH": ("Competitors deploying robots into industrial settings as their own product. "
+              "Intel only — never contact."),
+    "INTEL": ("Market updates — substrate shifts, regulation, funding patterns, plant-floor software. "
+              "Read it; no action."),
+}
 # Email order. Partners first (they unblock a deployment), then absorb targets, then
 # competitor intel — which the operator reads deliberately, not as leftovers.
 SECTIONS = ["PARTNER", "ABSORB", "WATCH", "INTEL",
@@ -164,6 +177,25 @@ def fetch_posts(limit_per_query=6):
                               "blurb": (row.get("one_liner") or row.get("searchable_title")
                                         or "")[:160]})
     return posts, errors
+
+
+def _news_sections(news):
+    """Cards grouped by tier, in SECTIONS order, each under a headed section with its rule."""
+    by_tier = {}
+    for rec in news:
+        by_tier.setdefault(rec.get("tier") or "INTEL", []).append(rec)
+    order = [t for t in SECTIONS if t in by_tier] + [t for t in by_tier if t not in SECTIONS]
+    out = []
+    for tier in order:
+        rows = by_tier[tier]
+        label, colour = TIER_LABEL.get(tier, (tier.replace("_", " ").title(), "#333"))
+        intro = SECTION_INTRO.get(tier, "")
+        out.append(f'<h3 style="margin:24px 0 2px 0;font-size:15px;color:{colour}">{label} '
+                   f'<span style="color:#999;font-weight:400">({len(rows)})</span></h3>')
+        if intro:
+            out.append(f'<div style="margin:0 0 10px 0;font-size:12px;color:#777">{intro}</div>')
+        out.extend(_news_card(r) for r in rows)
+    return out
 
 
 def _news_card(rec):
@@ -339,9 +371,10 @@ font-size:14px;color:#111;max-width:760px;line-height:1.45">
              _discovery_section(discoveries or [])]
 
     # News is the primary lane — what moved, why it matters, source + company link.
+    # Grouped under a heading per tier so PARTNER / ABSORB / WATCH / INTEL each read as
+    # their own section (the skill promised this; until 2026-09-02 the cards ran together).
     if news:
-        for rec in news:
-            parts.append(_news_card(rec))
+        parts.extend(_news_sections(news))
 
     if not news and not new_companies and not new_posts:
         parts.append('<p style="color:#666">Nothing new since the last run. '
